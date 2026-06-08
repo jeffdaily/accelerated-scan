@@ -11,7 +11,22 @@ if is_rocm:
     from accelerated_scan.scalar import scan as _scan_impl, Scan as _ScanClass
 
     def scan_forward(gates, tokens, reverse=False):
+        if reverse:
+            # A reverse scan of x_t = a_t x_{t-1} + b_t is the time-reversal of a
+            # forward scan on the time-reversed inputs: flip(forward(flip(a), flip(b))).
+            # The Triton backend requires contiguous inputs, so materialize the flips.
+            return _scan_impl(gates.flip(-1).contiguous(), tokens.flip(-1).contiguous()).flip(-1)
         return _scan_impl(gates, tokens)
+
+    def warpscan_forward(gates, tokens, out, reverse=False):
+        out.copy_(scan_forward(gates, tokens, reverse=reverse))
+        return out
+
+    def warpscan_backward(gates, output, outGrad, gateGradOut, valueGradOut):
+        raise NotImplementedError(
+            "warpscan_backward is the low-level C++ binding and is unavailable on "
+            "ROCm; the ROCm autograd path uses the Triton Scan.backward instead."
+        )
 
     def scan(gates, tokens):
         """Solve a first-order recurrence relation:
